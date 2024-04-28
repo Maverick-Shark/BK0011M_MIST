@@ -1,0 +1,6 @@
+[submodule "DeMiSTify"]
+	path = DeMiSTify
+	url = git@github.com:Maverick-Shark/DeMiSTify.git
+[submodule "mist-modules"]
+	path = mist-modules
+	url = git@github.com:Maverick-Shark/mist-modules.git
