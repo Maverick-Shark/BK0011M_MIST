@@ -23,7 +23,10 @@
 
 module bk0011m
 (
-	input         CLOCK_27,
+	input         CLOCK_27,   // Input clock 27 MHz (cyc3)
+`ifdef USE_CLOCK_50
+	input         CLOCK_50,   // Input clock 50 MHz (cyc4gx)
+`endif
 
 	output        LED,
 	output [VGA_BITS-1:0] VGA_R,
@@ -163,13 +166,21 @@ assign SDRAM2_nWE = 1;
 
 /////////////////////////////   CLOCKS   //////////////////////////////
 wire plock;
-wire clk_sys, clk_vid;
+wire clk_sys, clk_vid, clk_mem;
+//wire clk_sys, clk_vid;
+
+assign SDRAM_CLK = clk_mem;
 
 pll pll
 (
+`ifdef USE_CLOCK_50
+	.inclk0(CLOCK_50),
+`else
 	.inclk0(CLOCK_27),
+`endif
 	.c0(clk_sys),
 	.c1(clk_vid),
+	.c2(clk_mem),
 	.locked(plock)
 );
 
@@ -226,17 +237,19 @@ wire        no_csync;
 wire [31:0] status;
 
 wire [31:0] sd_lba;
-wire        sd_rd;
-wire        sd_wr;
-wire        sd_ack;
+wire  [2:0] sd_rd;
+wire  [2:0] sd_wr;
+wire  [2:0] sd_ack;
 wire        sd_ack_conf;
-wire        sd_conf;
-wire        sd_sdhc;
+wire        sd_conf = 1'b0;
+wire        sd_sdhc = 1'b1;
 wire  [8:0] sd_buff_addr;
 wire  [7:0] sd_buff_dout;
 wire  [7:0] sd_buff_din;
 wire        sd_buff_wr;
-wire        sd_mounted;
+wire  [2:0] img_mounted;
+wire        img_readonly = 0;
+wire [63:0] img_size;
 
 `ifdef USE_HDMI
 wire        i2c_start;
@@ -250,27 +263,32 @@ wire        i2c_end;
 `endif
 
 `include "build_id.v"
+
 localparam CONF_STR = 
 {
 	"BK0011M;;",
-	"F,BINDSK,FDD(A);",
-	"S0U,VHD,HDD(A);",
+	"S1U,DSKBKD,Mount FDD(A);",
+	"S2U,DSKBKD,Mount FDD(B);",
+	"S0U,VHD,Mount HDD;",
+	`SEP
 	"O78,Scandoubler Fx,None,CRT 25%,CRT 50%,CRT 75%;",
 	"O1,CPU Speed,3MHz/4MHz,6MHz/8MHz;",
 	"O56,Model,BK0011M & DSK,BK0010 & DSK,BK0011M,BK0010;",
+	"OC,Sound mode,PSG,Covox;",
+	`SEP
 	"T2,Reset & Unload Disk;",
 	"V,v2.60.",`BUILD_DATE
 };
 
 wire  [1:0] st_scanlines = status[8:7];
 
-user_io #(.STRLEN($size(CONF_STR)>>3), .SD_IMAGES(2), .FEATURES(32'h0 | (BIG_OSD << 13) | (HDMI << 14))) user_io
+user_io #(.STRLEN($size(CONF_STR)>>3), .SD_IMAGES(3), .FEATURES(32'h0 | (BIG_OSD << 13) | (HDMI << 14))) user_io
 (
 	.conf_str	(CONF_STR),
-	.clk_sys		(clk_sys),
+	.clk_sys	(clk_sys),
 	.clk_sd		(clk_sys),
 
-	.SPI_CLK		(SPI_SCK),
+	.SPI_CLK	(SPI_SCK),
 	.SPI_SS_IO	(CONF_DATA0),
 	.SPI_MISO	(SPI_DO),
 	.SPI_MOSI	(SPI_DI),
@@ -279,11 +297,11 @@ user_io #(.STRLEN($size(CONF_STR)>>3), .SD_IMAGES(2), .FEATURES(32'h0 | (BIG_OSD
 	.joystick_1	(joystick_1),
 	.joystick_analog_0(),
 	.joystick_analog_1(),
-	.buttons		(buttons),
+	.buttons	(buttons),
 	.switches	(switches),
 	.scandoubler_disable	(scandoubler_disable),
 	.ypbpr		(ypbpr),
-	.no_csync   (no_csync),
+	.no_csync	(no_csync),
 
 	.status		(status),
 `ifdef USE_HDMI
@@ -297,25 +315,25 @@ user_io #(.STRLEN($size(CONF_STR)>>3), .SD_IMAGES(2), .FEATURES(32'h0 | (BIG_OSD
 	.i2c_end        (i2c_end        ),
 `endif
 
-	.sd_conf				(sd_conf),
-	.sd_sdhc				(sd_sdhc),
-	.img_mounted			(sd_mounted),
-	.img_size			(),
-	.sd_lba				(sd_lba),
-	.sd_rd				(sd_rd),
-	.sd_wr				(sd_wr),
-	.sd_ack				(sd_ack),
-	.sd_ack_conf		(sd_ack_conf),
-	.sd_buff_addr		(sd_buff_addr),
-	.sd_dout				(sd_buff_dout),
-	.sd_din				(sd_buff_din),
+	.sd_conf	(sd_conf),
+	.sd_sdhc	(sd_sdhc),
+	.img_mounted	(img_mounted),
+	.img_size	(img_size),
+	.sd_lba		(sd_lba),
+	.sd_rd		(sd_rd),
+	.sd_wr		(sd_wr),
+	.sd_ack_x	(sd_ack),
+	.sd_ack_conf	(sd_ack_conf),
+	.sd_buff_addr	(sd_buff_addr),
+	.sd_dout	(sd_buff_dout),
+	.sd_din		(sd_buff_din),
 	.sd_dout_strobe	(sd_buff_wr),
 
-	.ps2_kbd_clk		(ps2_kbd_clk),
-	.ps2_kbd_data		(ps2_kbd_data),
-	.ps2_mouse_clk		(ps2_mouse_clk),
+	.ps2_kbd_clk	(ps2_kbd_clk),
+	.ps2_kbd_data	(ps2_kbd_data),
+	.ps2_mouse_clk	(ps2_mouse_clk),
 	.ps2_mouse_data	(ps2_mouse_data)
-//	.ps2_caps_led		(ps2_caps_led)
+//	.ps2_caps_led	(ps2_caps_led)
 );
 
 assign LED = !dsk_copy;
@@ -324,20 +342,20 @@ assign LED = !dsk_copy;
 //////////////////////////////   CPU   ////////////////////////////////
 wire        cpu_dclo;
 wire        cpu_aclo;
-wire  [3:1]	cpu_irq = {1'b0, irq2, (key_stop && !key_stop_block)};
+wire  [3:1] cpu_irq = {1'b0, irq2, (key_stop && !key_stop_block)};
 wire        cpu_virq;
 wire        cpu_iacko;
 wire [15:0] cpu_dout;
 wire        cpu_din_out;
 wire        cpu_dout_out;
 reg         cpu_ack;
-wire  [2:1]	cpu_psel;
+wire  [2:1] cpu_psel;
 wire        bus_reset;
 wire [15:0] bus_din = cpu_dout;
-wire [15:0]	bus_addr;
+wire [15:0] bus_addr;
 wire        bus_sync;
 wire        bus_we;
-wire  [1:0]	bus_wtbt;
+wire  [1:0] bus_wtbt;
 wire        bus_stb = cpu_dout_in | cpu_din_out;
 
 vm1_reset reset
@@ -392,8 +410,8 @@ vm1_se cpu
 wire        cpu_dout_in  = dout_delay[{~bk0010,1'b0}] & cpu_dout_out;
 wire        sysreg_sel   = cpu_psel[1];
 wire        port_sel     = cpu_psel[2];
-wire [15:0]	cpureg_data  = (bus_sync & !cpu_psel & (bus_addr[15:4] == (16'o177700 >> 4))) ? cpu_dout : 16'd0;
-wire [15:0]	sysreg_data  = sysreg_sel ? {start_addr, 1'b1, ~key_down, 3'b000, super_flg, 2'b00} : 16'd0;
+wire [15:0] cpureg_data  = (bus_sync & !cpu_psel & (bus_addr[15:4] == (16'o177700 >> 4))) ? cpu_dout : 16'd0;
+wire [15:0] sysreg_data  = sysreg_sel ? {start_addr, 1'b1, ~key_down, 3'b000, super_flg, 2'b00} : 16'd0;
 wire [15:0] cpu_din      = cpureg_data | keyboard_data | scrreg_data | ram_data | sysreg_data | port_data | ivec_data;
 wire        sysreg_write = bus_stb & sysreg_sel & bus_we;
 wire        port_write   = bus_stb & port_sel   & bus_we;
@@ -412,7 +430,7 @@ end
 
 
 /////////////////////////////   MEMORY   //////////////////////////////
-wire [15:0]	ram_data;
+wire [15:0] ram_data;
 wire        ram_ack;
 wire  [1:0] screen_write;
 reg         bk0010     = 1'bZ;
@@ -441,7 +459,6 @@ memory memory
 	.mem_copy_we(dsk_copy_we),
 	.mem_copy_rd(dsk_copy_rd)
 );
-assign SDRAM_CLK = clk_sys;
 
 always @(posedge clk_sys) begin
 	integer reset_time;
@@ -467,7 +484,7 @@ end
 
 
 ///////////////////////////   INTERRUPTS   ////////////////////////////
-wire [15:0]	ivec_o;
+wire [15:0] ivec_o;
 wire [15:0] ivec_data = ivec_sel ? ivec_o : 16'd0;
 
 wire ivec_sel = cpu_iacko & !bus_we;
@@ -504,7 +521,7 @@ wire        key_stop;
 wire        key_reset;
 wire        key_color;
 wire        key_bw;
-wire [15:0]	keyboard_data;
+wire [15:0] keyboard_data;
 wire        keyboard_ack;
 
 keyboard keyboard
@@ -515,7 +532,7 @@ keyboard keyboard
 );
 
 reg         joystick_or_mouse = 0;
-wire [15:0] port_data = port_sel ? (joystick_or_mouse ? mouse_state : joystick) : 16'd0;
+wire [15:0] port_data = port_sel ? (~covox_enable & joystick_or_mouse ? mouse_state : joystick) : 16'd0;
 wire  [7:0] joystick =  joystick_0 | joystick_1;
 
 always @(posedge clk_sys) begin
@@ -541,7 +558,7 @@ ps2_mouse mouse
 );
 
 reg  [6:0] mouse_state  = 0;
-wire       mouse_write  = bus_wtbt[0] & port_write;
+wire       mouse_write = ~covox_enable & bus_wtbt[0] & port_write;
 always @(posedge clk_sys) begin
 	reg mouse_enable = 0;
 	reg old_write;
@@ -587,11 +604,16 @@ wire [5:0] psg_active;
 wire [9:0] DACinL = psg_active ? {1'b0, channel_a, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
 wire [9:0] DACinR = psg_active ? {1'b0, channel_c, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
 
+//assign def_left_ch  = psg_active ? {1'b0, channel_a, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
+//assign def_right_ch = psg_active ? {1'b0, channel_c, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
+
 sigma_delta_dac #(.MSBI(9)) dac_l
 (
 	.CLK(clk_sys),
 	.RESET(bus_reset),
-	.DACin(DACinL),
+	//.DACin(DACinL),
+	//.DACin(covox_enable ? {1'b0, out_port_data[7:0],  1'b0} + {2'b00, spk_out, 5'b00000} : {def_left_ch,  6'd0}),
+	.DACin(covox_enable ? {1'b0, out_port_data[7:0], out_port_data[7:1]} + {2'b00, spk_out, 11'b00000} : {DACinL,  6'd0}),
 	.DACout(AUDIO_L)
 );
 
@@ -599,7 +621,9 @@ sigma_delta_dac #(.MSBI(9)) dac_r
 (
 	.CLK(clk_sys),
 	.RESET(bus_reset),
-	.DACin(DACinR),
+	//.DACin(DACinR),
+	//.DACin(covox_enable ? {1'b0, out_port_data[15:8], 1'b0} + {2'b00, spk_out, 5'b00000} : {def_right_ch, 6'd0}),
+	.DACin(covox_enable ? {1'b0, out_port_data[15:8], out_port_data[15:9]} + {2'b00, spk_out, 11'b00000} : {DACinR, 6'd0}),
 	.DACout(AUDIO_R)
 );
 
@@ -608,8 +632,8 @@ ym2149 psg
 	.CLK(clk_sys),
 	.CE(ce_psg),
 	.RESET(bus_reset),
-	.BDIR(port_write),
-	.BC(bus_wtbt[1]),
+	.BDIR(~covox_enable & port_write),
+	.BC(~covox_enable & bus_wtbt[1]),
 	.DI(~bus_din[7:0]),
 	.CHANNEL_A(channel_a),
 	.CHANNEL_B(channel_b),
@@ -618,6 +642,22 @@ ym2149 psg
 	.SEL(0),
 	.MODE(0)
 );
+
+// COVOX
+wire covox_enable = status[12];
+reg [15:0] out_port_data;
+//wire [9:0] def_left_ch, def_right_ch;
+
+always @(posedge clk_sys) begin
+	reg old_write;
+	old_write <= port_write;
+	if (~old_write & port_write) begin
+		if (bus_wtbt[0])
+			out_port_data[7:0]  <= cpu_dout[7:0];
+		if (bus_wtbt[1])
+			out_port_data[15:8] <= cpu_dout[15:8];
+	end
+end
 
 `ifdef I2S_AUDIO
 i2s i2s (
@@ -629,8 +669,10 @@ i2s i2s (
 	.lrclk(I2S_LRCK),
 	.sdata(I2S_DATA),
 
-	.left_chan({1'b0, DACinL, 5'd0}),
-	.right_chan({1'b0, DACinR, 5'd0})
+	//.left_chan({1'b0, DACinL, 5'd0}),
+	.left_chan(covox_enable ? {1'b0, out_port_data[7:0], out_port_data[7:1]} + {2'b00, spk_out, 11'd0} : {DACinL, 6'd0}),
+	//.right_chan({1'b0, DACinR, 5'd0})
+	.right_chan(covox_enable ? {1'b0, out_port_data[15:8], out_port_data[15:9]} + {2'b00, spk_out, 11'd0} : {DACinR, 6'd0})
 );
 `ifdef I2S_AUDIO_HDMI
 assign HDMI_MCLK = 0;
@@ -649,12 +691,13 @@ spdif spdif
 	.rst_i(reset),
 	.clk_rate_i(32'd96_000_000),
 	.spdif_o(SPDIF),
-	.sample_i({1'b0, DACinR, 5'd0, 1'b0, DACinL, 5'd0})
+	//.sample_i({1'b0, DACinR, 5'd0, 1'b0, DACinL, 5'd0})
+	.sample_i(covox_enable ? {1'b0, out_port_data[7:0], out_port_data[7:1], 1'b0, out_port_data[15:8], out_port_data[15:9]} : { DACinR, 6'd0, DACinL, 6'd0})
 );
 `endif
 
 /////////////////////////////   VIDEO   ///////////////////////////////
-wire [15:0]	scrreg_data;
+wire [15:0] scrreg_data;
 wire        scrreg_ack;
 wire        irq2;
 wire [13:0] vram_addr;
@@ -783,6 +826,28 @@ assign HDMI_PCLK = clk_vid;
 `endif
 
 //////////////////////////   DISK, TAPE   /////////////////////////////
+wire        ioctl_download;
+wire        ioctl_wr;
+wire [24:0] ioctl_addr;
+wire [15:0] ioctl_dout;
+wire  [7:0] ioctl_index;
+
+data_io #(.DOUT_16(1'b1)) data_io (
+	.clk_sys		(clk_sys),
+
+	.SPI_SCK	(SPI_SCK),
+	.SPI_SS2	(SPI_SS2),
+	.SPI_SS4	(SPI_SS4),
+	.SPI_DI		(SPI_DI),
+	.SPI_DO		(SPI_DO),
+
+	.ioctl_download	(ioctl_download),
+	.ioctl_index	(ioctl_index),
+	.ioctl_wr	(ioctl_wr),
+	.ioctl_addr	(ioctl_addr),
+	.ioctl_dout	(ioctl_dout)
+);
+
 wire        disk_ack;
 wire        reset_req;
 wire        dsk_copy;
@@ -793,18 +858,6 @@ wire [15:0] dsk_copy_dout;
 wire        dsk_copy_we;
 wire        dsk_copy_rd;
 
-disk disk(
-	.*,
-
-	.SPI_SCK		(SPI_SCK),
-	.SPI_SS2		(SPI_SS2),
-	.SPI_SS4		(SPI_SS4),
-	.SPI_DO		(SPI_DO),
-	.SPI_DI		(SPI_DI),
-
-	.reset(cpu_dclo),
-	.reset_full(status[2]),
-	.bus_ack(disk_ack)
-);
+disk disk(.*, .img_size(img_size[40:9]), .reset(cpu_dclo), .reset_full(status[2]), .bus_ack(disk_ack), .sd_ack(|sd_ack));
 
 endmodule
