@@ -41,7 +41,7 @@
 # ========================
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
 set_global_assignment -name NUM_PARALLEL_PROCESSORS ALL
-set_global_assignment -name LAST_QUARTUS_VERSION "22.1std.2 Lite Edition"
+set_global_assignment -name LAST_QUARTUS_VERSION "17.1.0 Lite Edition"
 set_global_assignment -name PRE_FLOW_SCRIPT_FILE "quartus_sh:build_id_verilog.tcl"
 set_global_assignment -name SMART_RECOMPILE ON
 
@@ -334,7 +334,7 @@ set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to HDMI_MCLK
 # ==========================
 set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
 set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
-set_global_assignment -name TIMING_ANALYZER_MULTICORNER_ANALYSIS ON
+#set_global_assignment -name TIMING_ANALYZER_MULTICORNER_ANALYSIS ON
 
 # Analysis & Synthesis Assignments
 # ================================
@@ -428,20 +428,20 @@ set_global_assignment -name VERILOG_FILE VM1/vm1_plm.v
 set_global_assignment -name VERILOG_FILE VM1/vm1_alib.v
 set_global_assignment -name VERILOG_FILE VM1/vm1_qbus_se.v
 set_global_assignment -name VERILOG_FILE VM1/vm1_se.v
-set_global_assignment -name VERILOG_FILE mist/cyc3/pll.v
-set_global_assignment -name VERILOG_FILE mist/translate.v
-set_global_assignment -name SYSTEMVERILOG_FILE mist/keyboard.sv
-set_global_assignment -name VERILOG_FILE mist/ps2_mouse.v
-set_global_assignment -name VERILOG_FILE mist/sector_w2b.v
-set_global_assignment -name VERILOG_FILE mist/sector_b2d.v
-set_global_assignment -name VERILOG_FILE mist/sector_b2w.v
-set_global_assignment -name VERILOG_FILE mist/dpram.v
-set_global_assignment -name SYSTEMVERILOG_FILE mist/sram.sv
-set_global_assignment -name SYSTEMVERILOG_FILE mist/memory.sv
-set_global_assignment -name VERILOG_FILE mist/sigma_delta_dac.v
-set_global_assignment -name SYSTEMVERILOG_FILE mist/ym2149.sv
-set_global_assignment -name SYSTEMVERILOG_FILE mist/video.sv
-set_global_assignment -name SYSTEMVERILOG_FILE mist/disk.sv
-set_global_assignment -name SYSTEMVERILOG_FILE mist/bk0011m.sv
+set_global_assignment -name VERILOG_FILE pll.v
+set_global_assignment -name VERILOG_FILE translate.v
+set_global_assignment -name SYSTEMVERILOG_FILE keyboard.sv
+set_global_assignment -name VERILOG_FILE ps2_mouse.v
+set_global_assignment -name VERILOG_FILE sector_w2b.v
+set_global_assignment -name VERILOG_FILE sector_b2d.v
+set_global_assignment -name VERILOG_FILE sector_b2w.v
+set_global_assignment -name VERILOG_FILE dpram.v
+set_global_assignment -name SYSTEMVERILOG_FILE sram.sv
+set_global_assignment -name SYSTEMVERILOG_FILE memory.sv
+set_global_assignment -name VERILOG_FILE sigma_delta_dac.v
+set_global_assignment -name SYSTEMVERILOG_FILE ym2149.sv
+set_global_assignment -name SYSTEMVERILOG_FILE video.sv
+set_global_assignment -name SYSTEMVERILOG_FILE disk.sv
+set_global_assignment -name SYSTEMVERILOG_FILE bk0011m.sv
 set_global_assignment -name SIGNALTAP_FILE output_files/hdmi.stp
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

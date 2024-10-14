@@ -166,10 +166,7 @@ assign SDRAM2_nWE = 1;
 
 /////////////////////////////   CLOCKS   //////////////////////////////
 wire plock;
-wire clk_sys, clk_vid, clk_mem;
-//wire clk_sys, clk_vid;
-
-assign SDRAM_CLK = clk_mem;
+wire clk_sys, clk_vid;
 
 pll pll
 (
@@ -179,8 +176,11 @@ pll pll
 	.inclk0(CLOCK_27),
 `endif
 	.c0(clk_sys),
+`ifdef SDRAM_QMTECH
+	.c1(SDRAM_CLK),
+`else	
 	.c1(clk_vid),
-	.c2(clk_mem),
+`endif
 	.locked(plock)
 );
 
@@ -263,19 +263,15 @@ wire        i2c_end;
 `endif
 
 `include "build_id.v"
-
 localparam CONF_STR = 
 {
 	"BK0011M;;",
 	"S1U,DSKBKD,Mount FDD(A);",
 	"S2U,DSKBKD,Mount FDD(B);",
 	"S0U,VHD,Mount HDD;",
-	`SEP
 	"O78,Scandoubler Fx,None,CRT 25%,CRT 50%,CRT 75%;",
 	"O1,CPU Speed,3MHz/4MHz,6MHz/8MHz;",
 	"O56,Model,BK0011M & DSK,BK0010 & DSK,BK0011M,BK0010;",
-	"OC,Sound mode,PSG,Covox;",
-	`SEP
 	"T2,Reset & Unload Disk;",
 	"V,v2.60.",`BUILD_DATE
 };
@@ -445,10 +441,6 @@ memory memory
 (
 	.*,
 
-//`ifdef USE_CLOCK_50
-//	.clk_sys(clk_mem),
-//`endif
-	
 	.init(!plock),
 	.sysreg_sel(sysreg_sel),
 
@@ -463,6 +455,9 @@ memory memory
 	.mem_copy_we(dsk_copy_we),
 	.mem_copy_rd(dsk_copy_rd)
 );
+`ifndef SDRAM_QMTECH
+	assign SDRAM_CLK = clk_sys;
+`endif
 
 always @(posedge clk_sys) begin
 	integer reset_time;
@@ -536,7 +531,7 @@ keyboard keyboard
 );
 
 reg         joystick_or_mouse = 0;
-wire [15:0] port_data = port_sel ? (~covox_enable & joystick_or_mouse ? mouse_state : joystick) : 16'd0;
+wire [15:0] port_data = port_sel ? (joystick_or_mouse ? mouse_state : joystick) : 16'd0;
 wire  [7:0] joystick =  joystick_0 | joystick_1;
 
 always @(posedge clk_sys) begin
@@ -562,7 +557,7 @@ ps2_mouse mouse
 );
 
 reg  [6:0] mouse_state  = 0;
-wire       mouse_write = ~covox_enable & bus_wtbt[0] & port_write;
+wire       mouse_write  = bus_wtbt[0] & port_write;
 always @(posedge clk_sys) begin
 	reg mouse_enable = 0;
 	reg old_write;
@@ -608,16 +603,11 @@ wire [5:0] psg_active;
 wire [9:0] DACinL = psg_active ? {1'b0, channel_a, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
 wire [9:0] DACinR = psg_active ? {1'b0, channel_c, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
 
-//assign def_left_ch  = psg_active ? {1'b0, channel_a, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
-//assign def_right_ch = psg_active ? {1'b0, channel_c, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
-
 sigma_delta_dac #(.MSBI(9)) dac_l
 (
 	.CLK(clk_sys),
 	.RESET(bus_reset),
-	//.DACin(DACinL),
-	//.DACin(covox_enable ? {1'b0, out_port_data[7:0],  1'b0} + {2'b00, spk_out, 5'b00000} : {def_left_ch,  6'd0}),
-	.DACin(covox_enable ? {1'b0, out_port_data[7:0], out_port_data[7:1]} + {2'b00, spk_out, 11'b00000} : {DACinL,  6'd0}),
+	.DACin(DACinL),
 	.DACout(AUDIO_L)
 );
 
@@ -625,9 +615,7 @@ sigma_delta_dac #(.MSBI(9)) dac_r
 (
 	.CLK(clk_sys),
 	.RESET(bus_reset),
-	//.DACin(DACinR),
-	//.DACin(covox_enable ? {1'b0, out_port_data[15:8], 1'b0} + {2'b00, spk_out, 5'b00000} : {def_right_ch, 6'd0}),
-	.DACin(covox_enable ? {1'b0, out_port_data[15:8], out_port_data[15:9]} + {2'b00, spk_out, 11'b00000} : {DACinR, 6'd0}),
+	.DACin(DACinR),
 	.DACout(AUDIO_R)
 );
 
@@ -636,8 +624,8 @@ ym2149 psg
 	.CLK(clk_sys),
 	.CE(ce_psg),
 	.RESET(bus_reset),
-	.BDIR(~covox_enable & port_write),
-	.BC(~covox_enable & bus_wtbt[1]),
+	.BDIR(port_write),
+	.BC(bus_wtbt[1]),
 	.DI(~bus_din[7:0]),
 	.CHANNEL_A(channel_a),
 	.CHANNEL_B(channel_b),
@@ -646,22 +634,6 @@ ym2149 psg
 	.SEL(0),
 	.MODE(0)
 );
-
-// COVOX
-wire covox_enable = status[12];
-reg [15:0] out_port_data;
-//wire [9:0] def_left_ch, def_right_ch;
-
-always @(posedge clk_sys) begin
-	reg old_write;
-	old_write <= port_write;
-	if (~old_write & port_write) begin
-		if (bus_wtbt[0])
-			out_port_data[7:0]  <= cpu_dout[7:0];
-		if (bus_wtbt[1])
-			out_port_data[15:8] <= cpu_dout[15:8];
-	end
-end
 
 `ifdef I2S_AUDIO
 i2s i2s (
@@ -673,10 +645,8 @@ i2s i2s (
 	.lrclk(I2S_LRCK),
 	.sdata(I2S_DATA),
 
-	//.left_chan({1'b0, DACinL, 5'd0}),
-	.left_chan(covox_enable ? {1'b0, out_port_data[7:0], out_port_data[7:1]} + {2'b00, spk_out, 11'd0} : {DACinL, 6'd0}),
-	//.right_chan({1'b0, DACinR, 5'd0})
-	.right_chan(covox_enable ? {1'b0, out_port_data[15:8], out_port_data[15:9]} + {2'b00, spk_out, 11'd0} : {DACinR, 6'd0})
+	.left_chan({1'b0, DACinL, 5'd0}),
+	.right_chan({1'b0, DACinR, 5'd0})
 );
 `ifdef I2S_AUDIO_HDMI
 assign HDMI_MCLK = 0;
@@ -695,8 +665,7 @@ spdif spdif
 	.rst_i(reset),
 	.clk_rate_i(32'd96_000_000),
 	.spdif_o(SPDIF),
-	//.sample_i({1'b0, DACinR, 5'd0, 1'b0, DACinL, 5'd0})
-	.sample_i(covox_enable ? {1'b0, out_port_data[7:0], out_port_data[7:1], 1'b0, out_port_data[15:8], out_port_data[15:9]} : { DACinR, 6'd0, DACinL, 6'd0})
+	.sample_i({1'b0, DACinR, 5'd0, 1'b0, DACinL, 5'd0})
 );
 `endif
 
