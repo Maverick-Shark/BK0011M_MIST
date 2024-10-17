@@ -23,9 +23,10 @@
 
 module bk0011m
 (
-	input         CLOCK_27,   // Input clock 27 MHz (cyc3)
 `ifdef USE_CLOCK_50
-	input         CLOCK_50,   // Input clock 50 MHz (cyc4gx)
+	input         CLOCK_50,	  // Input clock 50 MHz (cyc4gx)
+`else
+	input         CLOCK_27,   // Input clock 27 MHz (cyc3)
 `endif
 
 	output        LED,
@@ -166,10 +167,19 @@ assign SDRAM2_nWE = 1;
 
 /////////////////////////////   CLOCKS   //////////////////////////////
 wire plock;
-wire clk_sys, clk_vid, clk_mem;
-//wire clk_sys, clk_vid;
+wire clk_sys, clk_vid, clk_rst;
 
-assign SDRAM_CLK = clk_mem;
+assign SDRAM_CLK = ~SDRAM_CLK;
+
+reg [2:0] counter = 0;
+always @(posedge clk_sys)
+    counter <= counter + 1'b1;
+
+assign clk_rst = counter[1];
+// counter[0] divide by  2
+// counter[1] divide by  4 -> 96 / 4 = 24 MHz
+// counter[2] divide by  8
+// counter[3] divide by 16
 
 pll pll
 (
@@ -180,7 +190,7 @@ pll pll
 `endif
 	.c0(clk_sys),
 	.c1(clk_vid),
-	.c2(clk_mem),
+	.c2(SDRAM_CLK),
 	.locked(plock)
 );
 
@@ -360,7 +370,7 @@ wire        bus_stb = cpu_dout_in | cpu_din_out;
 
 vm1_reset reset
 (
-	.clk(clk_sys),
+	.clk(clk_rst),
 	.reset(!sys_ready | reset_req | buttons[1] | status[2] | key_reset),
 	.dclo(cpu_dclo),
 	.aclo(cpu_aclo)
@@ -445,10 +455,6 @@ memory memory
 (
 	.*,
 
-//`ifdef USE_CLOCK_50
-//	.clk_sys(clk_mem),
-//`endif
-	
 	.init(!plock),
 	.sysreg_sel(sysreg_sel),
 
@@ -605,31 +611,30 @@ wire [7:0] channel_a;
 wire [7:0] channel_b;
 wire [7:0] channel_c;
 wire [5:0] psg_active;
-wire [9:0] DACinL = psg_active ? {1'b0, channel_a, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
-wire [9:0] DACinR = psg_active ? {1'b0, channel_c, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
 
-//assign def_left_ch  = psg_active ? {1'b0, channel_a, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
-//assign def_right_ch = psg_active ? {1'b0, channel_c, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
+wire [9:0] dac_left_ch = psg_active ? {1'b0, channel_a, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
+wire [9:0] dac_right_ch = psg_active ? {1'b0, channel_c, 1'b0} + {2'b00, channel_b} + {2'b00, spk_out, 5'b00000} : {spk_out, 7'b0000000};
 
-sigma_delta_dac #(.MSBI(9)) dac_l
+wire DAC_L, DAC_R;
+
+sigma_delta_dac #(.MSBI(9)) dac_l  // 12-bit
 (
 	.CLK(clk_sys),
 	.RESET(bus_reset),
-	//.DACin(DACinL),
-	//.DACin(covox_enable ? {1'b0, out_port_data[7:0],  1'b0} + {2'b00, spk_out, 5'b00000} : {def_left_ch,  6'd0}),
-	.DACin(covox_enable ? {1'b0, out_port_data[7:0], out_port_data[7:1]} + {2'b00, spk_out, 11'b00000} : {DACinL,  6'd0}),
-	.DACout(AUDIO_L)
+	.DACin(covox_enable ? {1'b0, out_port_data[7:0], out_port_data[7:5]} + {2'b00, spk_out, 5'b00000} : { dac_left_ch, 2'b00 }),
+	.DACout(DAC_L)
 );
 
-sigma_delta_dac #(.MSBI(9)) dac_r
+sigma_delta_dac #(.MSBI(9)) dac_r	// 12-bit
 (
 	.CLK(clk_sys),
 	.RESET(bus_reset),
-	//.DACin(DACinR),
-	//.DACin(covox_enable ? {1'b0, out_port_data[15:8], 1'b0} + {2'b00, spk_out, 5'b00000} : {def_right_ch, 6'd0}),
-	.DACin(covox_enable ? {1'b0, out_port_data[15:8], out_port_data[15:9]} + {2'b00, spk_out, 11'b00000} : {DACinR, 6'd0}),
-	.DACout(AUDIO_R)
+	.DACin(covox_enable ? {1'b0, out_port_data[15:8], out_port_data[15:13]} + {2'b00, spk_out, 5'b00000} : { dac_right_ch, 2'b00 }),
+	.DACout(DAC_R)
 );
+
+assign AUDIO_L = { DAC_L, 4'd0 };	// 16-bit
+assign AUDIO_R = { DAC_R, 4'd0 };
 
 ym2149 psg
 (
@@ -649,8 +654,7 @@ ym2149 psg
 
 // COVOX
 wire covox_enable = status[12];
-reg [15:0] out_port_data;
-//wire [9:0] def_left_ch, def_right_ch;
+reg [15:0] out_port_data;		// 16-bit
 
 always @(posedge clk_sys) begin
 	reg old_write;
@@ -667,16 +671,14 @@ end
 i2s i2s (
 	.reset(1'b0),
 	.clk(clk_sys),
-	.clk_rate(32'd96_000_000),
+	.clk_rate(32'd96_000_000),	// 96MHz
 
 	.sclk(I2S_BCK),
 	.lrclk(I2S_LRCK),
 	.sdata(I2S_DATA),
 
-	//.left_chan({1'b0, DACinL, 5'd0}),
-	.left_chan(covox_enable ? {1'b0, out_port_data[7:0], out_port_data[7:1]} + {2'b00, spk_out, 11'd0} : {DACinL, 6'd0}),
-	//.right_chan({1'b0, DACinR, 5'd0})
-	.right_chan(covox_enable ? {1'b0, out_port_data[15:8], out_port_data[15:9]} + {2'b00, spk_out, 11'd0} : {DACinR, 6'd0})
+	.left_chan(covox_enable ? {1'b0, out_port_data[7:0], 7'd0 } + {2'b00, spk_out, 11'd0} : { 1'b0, dac_left_ch, 5'd0 }),
+	.right_chan(covox_enable ? {1'b0, out_port_data[15:8], 7'd0 } + {2'b00, spk_out, 11'd0} : { 1'b0, dac_left_ch, 5'd0 })
 );
 `ifdef I2S_AUDIO_HDMI
 assign HDMI_MCLK = 0;
@@ -695,10 +697,10 @@ spdif spdif
 	.rst_i(reset),
 	.clk_rate_i(32'd96_000_000),
 	.spdif_o(SPDIF),
-	//.sample_i({1'b0, DACinR, 5'd0, 1'b0, DACinL, 5'd0})
-	.sample_i(covox_enable ? {1'b0, out_port_data[7:0], out_port_data[7:1], 1'b0, out_port_data[15:8], out_port_data[15:9]} : { DACinR, 6'd0, DACinL, 6'd0})
+	.sample_i(covox_enable ? {1'b0, out_port_data[7:0], 7'd0, out_port_data[15:8], 7'd0 } : { dac_left_ch, 6'd0, dac_right_ch, 6'd0})
 );
 `endif
+
 
 /////////////////////////////   VIDEO   ///////////////////////////////
 wire [15:0]	scrreg_data;
@@ -839,17 +841,17 @@ wire  [7:0] ioctl_index;
 data_io #(.DOUT_16(1'b1)) data_io (
 	.clk_sys		(clk_sys),
 
-	.SPI_SCK		(SPI_SCK),
-	.SPI_SS2		(SPI_SS2),
-	.SPI_SS4		(SPI_SS4),
+	.SPI_SCK	(SPI_SCK),
+	.SPI_SS2	(SPI_SS2),
+	.SPI_SS4	(SPI_SS4),
 	.SPI_DI		(SPI_DI),
 	.SPI_DO		(SPI_DO),
 
 	.ioctl_download	(ioctl_download),
-	.ioctl_index		(ioctl_index),
-	.ioctl_wr			(ioctl_wr),
-	.ioctl_addr			(ioctl_addr),
-	.ioctl_dout			(ioctl_dout)
+	.ioctl_index	(ioctl_index),
+	.ioctl_wr		(ioctl_wr),
+	.ioctl_addr		(ioctl_addr),
+	.ioctl_dout		(ioctl_dout)
 );
 
 wire        disk_ack;

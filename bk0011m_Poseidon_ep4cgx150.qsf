@@ -402,7 +402,7 @@ set_global_assignment -name VERILOG_MACRO "BIG_OSD=1"
 set_global_assignment -name VERILOG_MACRO "USE_CLOCK_50=1"
 set_global_assignment -name VERILOG_MACRO "SDRAM_QMTECH=1"
 
-set_global_assignment -name SDC_FILE bk0011m.sdc
+set_global_assignment -name SDC_FILE bk0011m_ep4cgx150.sdc
 set_global_assignment -name QIP_FILE "mist-modules/mist.qip"
 set_global_assignment -name VERILOG_FILE VM1/vm1_vic.v
 set_global_assignment -name VERILOG_FILE VM1/vm1_tve.v
